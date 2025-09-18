@@ -183,7 +183,7 @@ class TestDataGenerator(unittest.TestCase):
             50,  # num_rows
             *repeat(1, 50),  # quantity for 50 rows
             *repeat(50, 50),  # discount_percentage for 50 rows
-            *repeat(1, 100),  # random_days for 50 rows (2 calls per row for delivery_date and order_date)
+            *repeat(100, 50),  # random_days for 50 rows (1 per row)
         ]
         mock_random.uniform.side_effect = [
             *repeat(100.0, 50),  # original_price for 50 rows
