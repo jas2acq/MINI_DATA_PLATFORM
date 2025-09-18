@@ -4,6 +4,7 @@ import tempfile
 import pandas as pd
 from unittest.mock import patch, MagicMock, mock_open
 from typing import Dict, Iterator, Any
+from itertools import repeat
 from src.data_generator import (
     generate_random_product_title,
     generate_random_date,
@@ -178,15 +179,23 @@ class TestDataGenerator(unittest.TestCase):
         mock_getenv.return_value = "10"
 
         # Mock random behaviors
-        mock_random.randint.side_effect = [50, 1, 50, 1]  # num_rows, quantity, discount_percentage, random_days
-        mock_random.uniform.side_effect = [100.0, 4.5]  # original_price, product_rating
-        mock_random.choice.side_effect = [
-            "Electronics",
-            "Laptop",
-            "Premium",
-            True,  # category, base, adjective, is_best_seller
+        mock_random.randint.side_effect = [
+            50,  # num_rows
+            *repeat(1, 50),  # quantity for 50 rows
+            *repeat(50, 50),  # discount_percentage for 50 rows
+            *repeat(1, 100),  # random_days for 50 rows (2 calls per row for delivery_date and order_date)
         ]
-        mock_random.choices.return_value = ["A" * 10]  # order_id
+        mock_random.uniform.side_effect = [
+            *repeat(100.0, 50),  # original_price for 50 rows
+            *repeat(4.5, 50),  # product_rating for 50 rows
+        ]
+        mock_random.choice.side_effect = [
+            *repeat("Electronics", 50),  # category for 50 rows
+            *repeat("Laptop", 50),  # base for 50 rows
+            *repeat("Premium", 50),  # adjective for 50 rows
+            *repeat(True, 50),  # is_best_seller for 50 rows
+        ]
+        mock_random.choices.return_value = ["A" * 10]  # order_id (single value, reused for simplicity)
 
         # Mock Faker
         mock_fake.name.return_value = "John Doe"
