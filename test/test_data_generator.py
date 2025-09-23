@@ -1,8 +1,11 @@
 import unittest
 import datetime
 import tempfile
+import pandas as pd
+import io
 from unittest.mock import patch, MagicMock, mock_open
 from typing import Dict, Iterator, Any
+from itertools import repeat
 from src.data_generator import (
     generate_random_product_title,
     generate_random_date,
@@ -31,7 +34,7 @@ def mock_any_string_containing(substring: str) -> Any:
 
 
 class TestDataGenerator(unittest.TestCase):
-    """Unit tests for data-generator.py.
+    """Unit tests for data_generator.py.
 
     Tests the functionality of data generation functions and main logic.
     """
@@ -39,7 +42,7 @@ class TestDataGenerator(unittest.TestCase):
     def setUp(self) -> None:
         """Set up test fixtures before each test."""
         self.temp_dir = tempfile.TemporaryDirectory()
-        self.mock_env_file = mock_open(read_data="FREQUENCY=10")
+        self.mock_env_file = mock_open(read_data="FREQUENCY=10\nMINIO_ENDPOINT=localhost:9000\nMINIO_ACCESS_KEY=testkey\nMINIO_SECRET_KEY=testsecret\nMINIO_SECURE=False")
         self.start_date = datetime.date(2023, 1, 1)
         self.end_date = datetime.date(2023, 12, 31)
 
@@ -143,14 +146,14 @@ class TestDataGenerator(unittest.TestCase):
     @patch("src.data_generator.os.makedirs")
     @patch("src.data_generator.random")
     @patch("src.data_generator.fake")
-    @patch("pandas.DataFrame.to_csv")
+    @patch("src.data_generator.minio.Minio")
     @patch("src.data_generator.logger")
     @patch("src.data_generator.time.sleep")
     def test_main_valid_frequency(
         self,
         mock_sleep: MagicMock,
         mock_logger: MagicMock,
-        mock_to_csv: MagicMock,
+        mock_minio: MagicMock,
         mock_fake: MagicMock,
         mock_random: MagicMock,
         mock_makedirs: MagicMock,
@@ -163,7 +166,7 @@ class TestDataGenerator(unittest.TestCase):
         Args:
             mock_sleep: Mock for time.sleep function.
             mock_logger: Mock for logger instance.
-            mock_to_csv: Mock for DataFrame.to_csv method.
+            mock_minio: Mock for Minio client.
             mock_fake: Mock for Faker instance.
             mock_random: Mock for random module.
             mock_makedirs: Mock for os.makedirs function.
@@ -171,35 +174,44 @@ class TestDataGenerator(unittest.TestCase):
             mock_load_dotenv: Mock for load_dotenv function.
             mock_open: Mock for builtins.open function.
 
-        Verifies that main generates a CSV with expected data and logs correctly.
+        Verifies that main generates data and uploads to MinIO with expected structure.
         """
-        # Mock environment variable
-        mock_getenv.return_value = "10"
+        # Mock environment variables
+        mock_getenv.side_effect = [
+            "10",  # FREQUENCY
+            "localhost:9000",  # MINIO_ENDPOINT
+            "testkey",  # MINIO_ACCESS_KEY
+            "testsecret",  # MINIO_SECRET_KEY
+            "False",  # MINIO_SECURE
+        ]
 
         # Set a fixed number of rows for predictable testing
-        num_rows = 3  # Reduced for easier testing
+        num_rows = 50
 
-        # Mock random behaviors with enough values
-        # Based on the actual source code, randint is called for:
-        # 1. num_rows (50-200)
-        # 2. For each row: discount_percentage (0-70), quantity (1-5)
-        # 3. For each row: delivery_date random days (0-delta.days), order_date random days (0-delta.days)
+        # Mock MinIO client
+        mock_minio_client = MagicMock()
+        mock_minio.return_value = mock_minio_client
+        mock_minio_client.bucket_exists.return_value = True
+
+        # Mock random behaviors
         mock_random.randint.side_effect = [
-            num_rows,  # num_rows call (50, 200)
-            *[50, 1, 100, 100] * num_rows,  # For each row: discount_percentage, quantity, delivery_date_days, order_date_days
+            num_rows,  # num_rows
+            *repeat(1, num_rows),  # quantity
+            *repeat(50, num_rows),  # discount_percentage
+            *repeat(100, num_rows * 2),  # random_days for delivery_date and order_date
         ]
-        
         mock_random.uniform.side_effect = [
-            *[100.0, 4.5] * num_rows,  # For each row: original_price, product_rating
+            *repeat(100.0, num_rows),  # original_price
+            *repeat(4.5, num_rows),  # product_rating
         ]
-        
         mock_random.choice.side_effect = [
-            *["Electronics", "Laptop", "Premium", True] * num_rows,  # For each row: category, base, adjective, is_best_seller
+            *repeat("Electronics", num_rows),  # category
+            *repeat("Laptop", num_rows),  # base
+            *repeat("Premium", num_rows),  # adjective
+            *repeat(True, num_rows),  # is_best_seller
         ]
-        
-        # Mock choices for order_id generation
         mock_random.choices.side_effect = [
-            ["A"] * 10 for _ in range(num_rows)  # order_id for each row
+            ["A" * 10] for _ in range(num_rows)  # order_id
         ]
 
         # Mock Faker
@@ -216,18 +228,49 @@ class TestDataGenerator(unittest.TestCase):
 
         # Verify logging
         mock_logger.info.assert_any_call("Starting data generation with frequency of 10 seconds between batches.")
-        mock_logger.info.assert_any_call(mock_any_string_containing("Generated MINI_DATA_PLATFORM/data/raw/batch_1_"))
+        mock_logger.info.assert_any_call(mock_any_string_containing("Uploaded raw/batch_1_"))
 
-        # Verify CSV output
-        mock_to_csv.assert_called_once()
-        args, kwargs = mock_to_csv.call_args
-        csv_path: str = args[0]
-        self.assertTrue(csv_path.startswith("MINI_DATA_PLATFORM/data/raw/batch_1_"))
-        self.assertFalse(kwargs.get('index', True))  # Verify index=False was passed
+        # Verify MinIO upload
+        mock_minio_client.put_object.assert_called_once()
+        args, kwargs = mock_minio_client.put_object.call_args
+        self.assertEqual(args[0], "data-platform")  # bucket_name
+        self.assertTrue(args[1].startswith("raw/batch_1_"))  # object_name
+        self.assertEqual(kwargs["content_type"], "text/csv")
 
-        # Verify DataFrame was created (we can't easily verify the actual DataFrame content 
-        # due to complex mocking, but we can verify the CSV method was called)
-        self.assertTrue(mock_to_csv.called)
+        # Capture the DataFrame from the put_object call
+        csv_buffer: io.BytesIO = args[2]
+        csv_buffer.seek(0)
+        df = pd.read_csv(csv_buffer)  # type: ignore[reportUnknownMemberType]
+
+        # Verify DataFrame structure
+        self.assertEqual(len(df), num_rows)
+        expected_columns = [
+            "order_id",
+            "customer_name",
+            "customer_email",
+            "customer_phone",
+            "customer_address",
+            "product_title",
+            "product_rating",
+            "discounted_price",
+            "original_price",
+            "discount_percentage",
+            "is_best_seller",
+            "delivery_date",
+            "data_collected_at",
+            "product_category",
+            "quantity",
+            "order_date",
+        ]
+        self.assertEqual(list(df.columns), expected_columns)
+
+        # Verify sample row
+        sample_row = df.iloc[0]
+        self.assertEqual(sample_row["order_id"], "A" * 10)
+        self.assertEqual(sample_row["customer_name"], "John Doe")
+        self.assertEqual(sample_row["product_title"], "Premium Laptop - Electronics Edition")
+        self.assertEqual(sample_row["product_category"], "Electronics")
+        self.assertEqual(sample_row["quantity"], 1)
 
     @patch("builtins.open", new_callable=mock_open)
     @patch("src.data_generator.os.getenv")
