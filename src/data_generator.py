@@ -5,9 +5,12 @@ import string
 import logging
 import datetime
 import pandas as pd
-from typing import Dict, Iterator, Any
+from typing import Dict, Iterator, Any, Tuple
 from dotenv import load_dotenv
 from faker import Faker
+from minio import Minio
+from minio.error import S3Error
+import io
 
 # Configure logging to append to a file in logs directory
 os.makedirs("MINI_DATA_PLATFORM/logs", exist_ok=True)
@@ -15,7 +18,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
     handlers=[
-        logging.FileHandler("MINI_DATA_PLATFORM/logs/sales_data_generator.log", mode="a"),  # Append mode
+        logging.FileHandler("MINI_DATA_PLATFORM/logs/sales_data_generator.log", mode="a"),
         logging.StreamHandler(),
     ],
 )
@@ -115,36 +118,195 @@ def generate_pii_data() -> Iterator[Dict[str, str]]:
             raise
 
 
-def main() -> None:
-    """Main function to generate sales data CSVs at specified frequency intervals.
+def load_and_validate_env() -> Tuple[int, str, str, str, bool]:
+    """Load and validate environment variables from .env file.
 
-    Reads FREQUENCY from .env file (in seconds) and generates CSV batches with random
-    row counts (50-200). Each batch is saved with a timestamped filename.
+    Returns:
+        Tuple of (frequency_int, minio_endpoint, minio_access_key, minio_secret_key, minio_secure).
 
     Raises:
-        ValueError: If FREQUENCY is missing or invalid.
+        ValueError: If any required environment variable is missing or invalid.
+    """
+    load_dotenv()
+    frequency: str | None = os.getenv("FREQUENCY")
+    minio_endpoint: str | None = os.getenv("MINIO_ENDPOINT")
+    minio_access_key: str | None = os.getenv("MINIO_ACCESS_KEY")
+    minio_secret_key: str | None = os.getenv("MINIO_SECRET_KEY")
+    minio_secure: str | None = os.getenv("MINIO_SECURE", "False")
+
+    if not frequency:
+        logger.error("FREQUENCY not found in .env file. Please add FREQUENCY=<integer> to .env (seconds).")
+        raise ValueError("FREQUENCY not found in .env file.")
+    if not minio_endpoint:
+        logger.error("MINIO_ENDPOINT not found in .env file. Please add MINIO_ENDPOINT=<endpoint> to .env.")
+        raise ValueError("MINIO_ENDPOINT not found in .env file.")
+    if not minio_access_key:
+        logger.error("MINIO_ACCESS_KEY not found in .env file. Please add MINIO_ACCESS_KEY=<access_key> to .env.")
+        raise ValueError("MINIO_ACCESS_KEY not found in .env file.")
+    if not minio_secret_key:
+        logger.error("MINIO_SECRET_KEY not found in .env file. Please add MINIO_SECRET_KEY=<secret_key> to .env.")
+        raise ValueError("MINIO_SECRET_KEY not found in .env file.")
+
+    try:
+        frequency_int: int = int(frequency)
+        if frequency_int <= 0:
+            raise ValueError("FREQUENCY must be a positive integer.")
+    except ValueError:
+        logger.error("Invalid FREQUENCY value in .env. Must be a positive integer (seconds).")
+        raise ValueError("Invalid FREQUENCY value in .env. Must be a positive integer (seconds).")
+
+    try:
+        minio_secure_bool: bool = minio_secure.lower() == "true"
+    except AttributeError:
+        logger.error("Invalid MINIO_SECURE value in .env. Must be 'True' or 'False'.")
+        raise ValueError("Invalid MINIO_SECURE value in .env. Must be 'True' or 'False'.")
+
+    return frequency_int, minio_endpoint, minio_access_key, minio_secret_key, minio_secure_bool
+
+
+def initialize_minio_client(endpoint: str, access_key: str, secret_key: str, secure: bool) -> Minio:
+    """Initialize MinIO client and ensure the data-platform bucket exists.
+
+    Args:
+        endpoint: MinIO server endpoint.
+        access_key: MinIO access key.
+        secret_key: MinIO secret key.
+        secure: Whether to use HTTPS.
+
+    Returns:
+        Initialized MinIO client.
+
+    Raises:
+        S3Error: If an error occurs during MinIO operations.
+        Exception: If MinIO client initialization fails.
+    """
+    try:
+        minio_client = Minio(endpoint, access_key=access_key, secret_key=secret_key, secure=secure)
+        bucket_name: str = "data-platform"
+        if not minio_client.bucket_exists(bucket_name):
+            minio_client.make_bucket(bucket_name)
+            logger.info(f"Created MinIO bucket: {bucket_name}")
+        return minio_client
+    except S3Error as e:
+        logger.error(f"Error checking or creating MinIO bucket data-platform: {str(e)}")
+        raise
+    except Exception as e:
+        logger.error(f"Failed to initialize MinIO client: {str(e)}")
+        raise
+
+
+def generate_batch_data(
+    pii_generator: Iterator[Dict[str, str]], start_date: datetime.date, end_date: datetime.date, batch_num: int
+) -> Tuple[pd.DataFrame, str]:
+    """Generate a batch of sales data and return the DataFrame and object name.
+
+    Args:
+        pii_generator: Iterator yielding PII data dictionaries.
+        start_date: Earliest date for random date generation.
+        end_date: Latest date for random date generation.
+        batch_num: Batch number for object naming.
+
+    Returns:
+        Tuple of (DataFrame with batch data, MinIO object name).
+
+    Raises:
+        Exception: If an error occurs during data generation.
+    """
+    try:
+        num_rows: int = random.randint(50, 200)
+        data: list[Dict[str, Any]] = []
+
+        for _ in range(num_rows):
+            category: str = random.choice(PRODUCT_CATEGORIES)
+            original_price: float = round(random.uniform(20, 2000), 2)
+            discount_percentage: int = random.randint(0, 70)
+            discounted_price: float = round(original_price * (1 - discount_percentage / 100), 2)
+            product_rating: float = round(random.uniform(1.0, 5.0), 1)
+            is_best_seller: bool = random.choice([True, False])
+            delivery_date: str = generate_random_date(start_date, end_date).strftime("%Y-%m-%d")
+            data_collected_at: str = datetime.date.today().strftime("%Y-%m-%d")
+            product_title: str = generate_random_product_title(category)
+
+            pii: Dict[str, str] = next(pii_generator)
+
+            order_id: str = "".join(random.choices(string.ascii_uppercase + string.digits, k=10))
+            quantity: int = random.randint(1, 5)
+            order_date: str = generate_random_date(start_date, end_date).strftime("%Y-%m-%d")
+
+            row: Dict[str, Any] = {
+                "order_id": order_id,
+                "customer_name": pii["customer_name"],
+                "customer_email": pii["customer_email"],
+                "customer_phone": pii["customer_phone"],
+                "customer_address": pii["customer_address"],
+                "product_title": product_title,
+                "product_rating": product_rating,
+                "discounted_price": discounted_price,
+                "original_price": original_price,
+                "discount_percentage": discount_percentage,
+                "is_best_seller": is_best_seller,
+                "delivery_date": delivery_date,
+                "data_collected_at": data_collected_at,
+                "product_category": category,
+                "quantity": quantity,
+                "order_date": order_date,
+            }
+            data.append(row)
+
+        df: pd.DataFrame = pd.DataFrame(data)
+        timestamp: str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        object_name: str = f"raw/batch_{batch_num}_{timestamp}.csv"
+        return df, object_name
+    except Exception as e:
+        logger.error(f"Error generating batch {batch_num}: {str(e)}")
+        raise
+
+
+def upload_batch_to_minio(minio_client: Minio, df: pd.DataFrame, object_name: str) -> None:
+    """Upload a batch DataFrame to MinIO as a CSV.
+
+    Args:
+        minio_client: Initialized MinIO client.
+        df: DataFrame containing batch data.
+        object_name: MinIO object name (path in bucket).
+
+    Raises:
+        S3Error: If an error occurs during upload.
+    """
+    try:
+        csv_buffer = io.BytesIO()
+        df.to_csv(csv_buffer, index=False)
+        csv_buffer.seek(0)
+        minio_client.put_object(
+            "data-platform",
+            object_name,
+            csv_buffer,
+            length=csv_buffer.getbuffer().nbytes,
+            content_type="text/csv",
+        )
+        logger.info(f"Uploaded {object_name} with {len(df)} rows to MinIO bucket data-platform.")
+    except S3Error as e:
+        logger.error(f"Error uploading {object_name} to MinIO bucket data-platform: {str(e)}")
+        raise
+
+
+def main() -> None:
+    """Main function to generate sales data CSVs and upload to MinIO bucket.
+
+    Orchestrates data generation and upload by reading environment variables,
+    initializing MinIO client, and generating batches at specified intervals.
+
+    Raises:
+        ValueError: If required environment variables are missing or invalid.
+        S3Error: If an error occurs during MinIO operations.
         Exception: If an error occurs during batch generation.
     """
     try:
-        # Load .env file
-        load_dotenv()
-        frequency: str | None = os.getenv("FREQUENCY")
+        # Load and validate environment variables
+        frequency, minio_endpoint, minio_access_key, minio_secret_key, minio_secure = load_and_validate_env()
 
-        # Validate FREQUENCY
-        if not frequency:
-            logger.error("FREQUENCY not found in .env file. Please add FREQUENCY=<integer> to .env (seconds).")
-            raise ValueError("FREQUENCY not found in .env file.")
-
-        try:
-            frequency_int: int = int(frequency)
-            if frequency_int <= 0:
-                raise ValueError("FREQUENCY must be a positive integer.")
-        except ValueError:
-            logger.error("Invalid FREQUENCY value in .env. Must be a positive integer (seconds).")
-            raise ValueError("Invalid FREQUENCY value in .env. Must be a positive integer (seconds).")
-
-        # Create the data/raw directory if it doesn't exist
-        os.makedirs("MINI_DATA_PLATFORM/data/raw", exist_ok=True)
+        # Initialize MinIO client
+        minio_client = initialize_minio_client(minio_endpoint, minio_access_key, minio_secret_key, minio_secure)
 
         # Initialize PII data generator
         pii_generator: Iterator[Dict[str, str]] = generate_pii_data()
@@ -154,70 +316,24 @@ def main() -> None:
         start_date: datetime.date = datetime.date(2023, 1, 1)
         end_date: datetime.date = datetime.date.today()
 
-        logger.info(f"Starting data generation with frequency of {frequency_int} seconds between batches.")
+        logger.info(f"Starting data generation with frequency of {frequency} seconds between batches.")
 
         while True:
             try:
-                # Random number of rows between 50 and 200 per batch
-                num_rows: int = random.randint(50, 200)
-                data: list[Dict[str, Any]] = []
+                # Generate batch data
+                df, object_name = generate_batch_data(pii_generator, start_date, end_date, batch_num)
 
-                for _ in range(num_rows):
-                    category: str = random.choice(PRODUCT_CATEGORIES)
-                    original_price: float = round(random.uniform(20, 2000), 2)
-                    discount_percentage: int = random.randint(0, 70)
-                    discounted_price: float = round(original_price * (1 - discount_percentage / 100), 2)
-                    product_rating: float = round(random.uniform(1.0, 5.0), 1)
-                    is_best_seller: bool = random.choice([True, False])
-                    delivery_date: str = generate_random_date(start_date, end_date).strftime("%Y-%m-%d")
-                    data_collected_at: str = datetime.date.today().strftime("%Y-%m-%d")
-                    product_title: str = generate_random_product_title(category)
-
-                    # Get PII data from generator
-                    pii: Dict[str, str] = next(pii_generator)
-
-                    # Additional sales-related fields for dashboard purposes
-                    order_id: str = "".join(random.choices(string.ascii_uppercase + string.digits, k=10))
-                    quantity: int = random.randint(1, 5)
-                    order_date: str = generate_random_date(start_date, end_date).strftime("%Y-%m-%d")
-
-                    row: Dict[str, Any] = {
-                        "order_id": order_id,
-                        "customer_name": pii["customer_name"],
-                        "customer_email": pii["customer_email"],
-                        "customer_phone": pii["customer_phone"],
-                        "customer_address": pii["customer_address"],
-                        "product_title": product_title,
-                        "product_rating": product_rating,
-                        "discounted_price": discounted_price,
-                        "original_price": original_price,
-                        "discount_percentage": discount_percentage,
-                        "is_best_seller": is_best_seller,
-                        "delivery_date": delivery_date,
-                        "data_collected_at": data_collected_at,
-                        "product_category": category,
-                        "quantity": quantity,
-                        "order_date": order_date,
-                    }
-                    data.append(row)
-
-                # Create DataFrame and save to CSV with timestamp in filename
-                df: pd.DataFrame = pd.DataFrame(data)
-                timestamp: str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                csv_path: str = f"MINI_DATA_PLATFORM/data/raw/batch_{batch_num}_{timestamp}.csv"
-                df.to_csv(csv_path, index=False)
-                logger.info(f"Generated {csv_path} with {num_rows} rows.")
+                # Upload to MinIO
+                upload_batch_to_minio(minio_client, df, object_name)
 
                 batch_num += 1
-
-                # Wait for the specified frequency (in seconds) before generating the next batch
-                time.sleep(frequency_int)
+                time.sleep(frequency)
 
             except KeyboardInterrupt:
                 logger.info("Received KeyboardInterrupt. Stopping data generation.")
                 break
             except Exception as e:
-                logger.error(f"Error generating batch {batch_num}: {str(e)}")
+                logger.error(f"Error processing batch {batch_num}: {str(e)}")
                 raise
 
     except Exception as e:
