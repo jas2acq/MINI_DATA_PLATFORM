@@ -1,7 +1,6 @@
 """Unit tests for data validation module."""
 
 import pandas as pd
-import pytest
 
 from dags.src.utils.schemas import SalesRecord
 from dags.src.validation.validator import validate_data

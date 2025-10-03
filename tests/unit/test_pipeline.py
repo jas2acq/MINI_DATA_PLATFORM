@@ -1,7 +1,6 @@
 """Unit tests for ETL pipeline orchestrator."""
 
-import io
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pytest
@@ -14,9 +13,7 @@ def test_save_invalid_data_to_quarantine_success(mock_minio_client, sample_inval
     """Test successful quarantine of invalid records."""
     sample_invalid_data["validation_error"] = "Invalid data"
 
-    save_invalid_data_to_quarantine(
-        mock_minio_client, sample_invalid_data, "raw/test.csv"
-    )
+    save_invalid_data_to_quarantine(mock_minio_client, sample_invalid_data, "raw/test.csv")
 
     mock_minio_client.put_object.assert_called_once()
     args = mock_minio_client.put_object.call_args
@@ -42,9 +39,7 @@ def test_save_invalid_data_to_quarantine_s3_error(mock_minio_client, sample_inva
     )
 
     with pytest.raises(S3Error):
-        save_invalid_data_to_quarantine(
-            mock_minio_client, sample_invalid_data, "raw/test.csv"
-        )
+        save_invalid_data_to_quarantine(mock_minio_client, sample_invalid_data, "raw/test.csv")
 
 
 def test_run_pipeline_success_single_dataframe(sample_sales_data):
@@ -97,9 +92,11 @@ def test_run_pipeline_with_invalid_records(sample_sales_data, sample_invalid_dat
                 with patch("dags.src.pipeline.get_raw_data") as mock_get_data:
                     with patch("dags.src.pipeline.validate_data") as mock_validate:
                         with patch("dags.src.pipeline.transform_sales_data") as mock_transform:
-                            with patch("dags.src.pipeline.upsert_data") as mock_upsert:
+                            with patch("dags.src.pipeline.upsert_data"):
                                 with patch("dags.src.pipeline.move_processed_file") as mock_move:
-                                    with patch("dags.src.pipeline.save_invalid_data_to_quarantine") as mock_quarantine:
+                                    with patch(
+                                        "dags.src.pipeline.save_invalid_data_to_quarantine"
+                                    ) as mock_quarantine:
                                         # Setup mocks
                                         mock_vault.return_value = MagicMock()
                                         mock_minio.return_value = MagicMock()
@@ -130,7 +127,9 @@ def test_run_pipeline_all_invalid_records(sample_invalid_data):
             with patch("dags.src.pipeline.get_object_size") as mock_size:
                 with patch("dags.src.pipeline.get_raw_data") as mock_get_data:
                     with patch("dags.src.pipeline.validate_data") as mock_validate:
-                        with patch("dags.src.pipeline.save_invalid_data_to_quarantine") as mock_quarantine:
+                        with patch(
+                            "dags.src.pipeline.save_invalid_data_to_quarantine"
+                        ) as mock_quarantine:
                             # Setup mocks
                             mock_vault.return_value = MagicMock()
                             mock_minio.return_value = MagicMock()
@@ -144,9 +143,7 @@ def test_run_pipeline_all_invalid_records(sample_invalid_data):
                             )
 
                             # Run pipeline - should raise error
-                            with pytest.raises(
-                                ValueError, match="All records.*failed validation"
-                            ):
+                            with pytest.raises(ValueError, match="All records.*failed validation"):
                                 run_pipeline("raw/test.csv")
 
                             # Quarantine should still be called

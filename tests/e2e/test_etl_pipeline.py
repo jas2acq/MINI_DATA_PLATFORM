@@ -168,9 +168,7 @@ def test_e2e_pipeline_all_invalid_data_fails(mock_e2e_environment):
                     run_pipeline("raw/all_invalid.csv")
 
 
-def test_e2e_pipeline_data_transformations_applied(
-    e2e_complete_dataset, mock_e2e_environment
-):
+def test_e2e_pipeline_data_transformations_applied(e2e_complete_dataset, mock_e2e_environment):
     """Test that all transformations are correctly applied end-to-end."""
     csv_buffer = io.BytesIO()
     e2e_complete_dataset.to_csv(csv_buffer, index=False)

@@ -1,7 +1,5 @@
 """Unit tests for data transformation module."""
 
-import pandas as pd
-
 from dags.src.transformation.transformer import transform_sales_data
 
 

@@ -2,7 +2,7 @@
 
 import os
 from datetime import date
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import psycopg2
@@ -89,9 +89,7 @@ def test_upsert_dimension_customer_success(mock_postgres_connection, sample_sale
     assert mock_postgres_connection.cursor.called
 
 
-def test_upsert_dimension_customer_database_error(
-    mock_postgres_connection, sample_sales_data
-):
+def test_upsert_dimension_customer_database_error(mock_postgres_connection, sample_sales_data):
     """Test customer upsert with database error."""
     sample_sales_data["customer_email_hash"] = "hash123"
     sample_sales_data["customer_phone_redacted"] = "***-****"
@@ -114,9 +112,7 @@ def test_upsert_dimension_product_success(mock_postgres_connection, sample_sales
     assert mock_postgres_connection.commit.called
 
 
-def test_upsert_dimension_product_database_error(
-    mock_postgres_connection, sample_sales_data
-):
+def test_upsert_dimension_product_database_error(mock_postgres_connection, sample_sales_data):
     """Test product upsert with database error."""
     mock_cursor = mock_postgres_connection.cursor.return_value
     mock_cursor.execute.side_effect = psycopg2.Error("DB error")
@@ -136,9 +132,7 @@ def test_upsert_dimension_date_success(mock_postgres_connection, sample_sales_da
     assert mock_postgres_connection.commit.called
 
 
-def test_upsert_dimension_date_database_error(
-    mock_postgres_connection, sample_sales_data
-):
+def test_upsert_dimension_date_database_error(mock_postgres_connection, sample_sales_data):
     """Test date upsert with database error."""
     mock_cursor = mock_postgres_connection.cursor.return_value
     mock_cursor.execute.side_effect = psycopg2.Error("DB error")

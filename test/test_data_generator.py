@@ -1,16 +1,19 @@
-import unittest
 import datetime
-import tempfile
-import pandas as pd
 import io
-from unittest.mock import patch, MagicMock, mock_open
-from typing import Dict, Iterator, Any
+import tempfile
+import unittest
+from collections.abc import Iterator
 from itertools import repeat
+from typing import Any
+from unittest.mock import MagicMock, mock_open, patch
+
+import pandas as pd
+
 from src.data_generator import (
-    generate_random_product_title,
-    generate_random_date,
     generate_pii_data,
-    main
+    generate_random_date,
+    generate_random_product_title,
+    main,
 )
 
 
@@ -23,6 +26,7 @@ def mock_any_string_containing(substring: str) -> Any:
     Returns:
         A mock object that matches any string containing the substring.
     """
+
     class StringContaining:
         def __init__(self, substring: str) -> None:
             self.substring = substring
@@ -42,7 +46,9 @@ class TestDataGenerator(unittest.TestCase):
     def setUp(self) -> None:
         """Set up test fixtures before each test."""
         self.temp_dir = tempfile.TemporaryDirectory()
-        self.mock_env_file = mock_open(read_data="FREQUENCY=10\nMINIO_ENDPOINT=localhost:9000\nMINIO_ACCESS_KEY=testkey\nMINIO_SECRET_KEY=testsecret\nMINIO_SECURE=False")
+        self.mock_env_file = mock_open(
+            read_data="FREQUENCY=10\nMINIO_ENDPOINT=localhost:9000\nMINIO_ACCESS_KEY=testkey\nMINIO_SECRET_KEY=testsecret\nMINIO_SECURE=False"
+        )
         self.start_date = datetime.date(2023, 1, 1)
         self.end_date = datetime.date(2023, 12, 31)
 
@@ -114,10 +120,10 @@ class TestDataGenerator(unittest.TestCase):
         mock_fake.phone_number.return_value = "+1-123-456-7890"
         mock_fake.address.return_value = "123 Main St, City, ST 12345"
 
-        pii_gen: Iterator[Dict[str, str]] = generate_pii_data()
-        pii: Dict[str, str] = next(pii_gen)
+        pii_gen: Iterator[dict[str, str]] = generate_pii_data()
+        pii: dict[str, str] = next(pii_gen)
 
-        expected: Dict[str, str] = {
+        expected: dict[str, str] = {
             "customer_name": "John Doe",
             "customer_email": "john.doe@example.com",
             "customer_phone": "+1-123-456-7890",
@@ -136,7 +142,7 @@ class TestDataGenerator(unittest.TestCase):
         Verifies that the generator raises an exception on error.
         """
         mock_fake.name.side_effect = Exception("Mock Faker error")
-        pii_gen: Iterator[Dict[str, str]] = generate_pii_data()
+        pii_gen: Iterator[dict[str, str]] = generate_pii_data()
         with self.assertRaises(Exception):
             next(pii_gen)
 
@@ -211,7 +217,8 @@ class TestDataGenerator(unittest.TestCase):
             *repeat(True, num_rows),  # is_best_seller
         ]
         mock_random.choices.side_effect = [
-            ["A" * 10] for _ in range(num_rows)  # order_id
+            ["A" * 10]
+            for _ in range(num_rows)  # order_id
         ]
 
         # Mock Faker
@@ -227,7 +234,9 @@ class TestDataGenerator(unittest.TestCase):
         main()
 
         # Verify logging
-        mock_logger.info.assert_any_call("Starting data generation with frequency of 10 seconds between batches.")
+        mock_logger.info.assert_any_call(
+            "Starting data generation with frequency of 10 seconds between batches."
+        )
         mock_logger.info.assert_any_call(mock_any_string_containing("Uploaded raw/batch_1_"))
 
         # Verify MinIO upload
@@ -319,7 +328,10 @@ class TestDataGenerator(unittest.TestCase):
         mock_getenv.return_value = "invalid"
         with self.assertRaises(ValueError) as cm:
             main()
-        self.assertEqual(str(cm.exception), "Invalid FREQUENCY value in .env. Must be a positive integer (seconds).")
+        self.assertEqual(
+            str(cm.exception),
+            "Invalid FREQUENCY value in .env. Must be a positive integer (seconds).",
+        )
         mock_logger.error.assert_called_with(
             "Invalid FREQUENCY value in .env. Must be a positive integer (seconds)."
         )

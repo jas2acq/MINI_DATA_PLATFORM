@@ -1,7 +1,6 @@
 """Integration tests for validation and transformation components."""
 
 import pandas as pd
-import pytest
 
 from dags.src.transformation.transformer import transform_sales_data
 from dags.src.utils.schemas import SalesRecord
@@ -108,7 +107,6 @@ def test_transform_preserves_column_count(integration_sales_data):
     """Test that transformation adds expected new columns."""
     # Validate
     valid_df, _ = validate_data(integration_sales_data, SalesRecord)
-    original_columns = set(valid_df.columns)
 
     # Transform
     transformed_df = transform_sales_data(valid_df)

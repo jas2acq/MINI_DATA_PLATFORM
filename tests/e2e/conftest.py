@@ -1,6 +1,5 @@
 """Shared fixtures for end-to-end tests."""
 
-import io
 from datetime import date
 from unittest.mock import MagicMock
 

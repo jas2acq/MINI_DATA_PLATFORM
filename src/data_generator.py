@@ -1,17 +1,20 @@
+import datetime
+import io
+import logging
 import os
-import time
 import random
 import string
-import logging
-import datetime
+import time
+from collections.abc import Iterator
+from typing import Any
+
+import hvac
 import pandas as pd
-from typing import Dict, Iterator, Any, Tuple
 from dotenv import load_dotenv
 from faker import Faker
-from minio import Minio
 from minio.error import S3Error
-import hvac
-import io
+
+from minio import Minio
 
 # Configure logging to append to a file in logs directory
 os.makedirs("MINI_DATA_PLATFORM/logs", exist_ok=True)
@@ -95,7 +98,7 @@ def generate_random_date(start_date: datetime.date, end_date: datetime.date) -> 
         raise
 
 
-def generate_pii_data() -> Iterator[Dict[str, str]]:
+def generate_pii_data() -> Iterator[dict[str, str]]:
     """Generate PII data using Faker.
 
     Yields:
@@ -133,10 +136,14 @@ def get_vault_client() -> hvac.Client:
     vault_token: str | None = os.getenv("VAULT_DEV_ROOT_TOKEN_ID")
 
     if not vault_addr:
-        logger.error("VAULT_ADDR not found in .env file. Please add VAULT_ADDR=<vault_url> to .env.")
+        logger.error(
+            "VAULT_ADDR not found in .env file. Please add VAULT_ADDR=<vault_url> to .env."
+        )
         raise ValueError("VAULT_ADDR not found in .env file.")
     if not vault_token:
-        logger.error("VAULT_DEV_ROOT_TOKEN_ID not found in .env file. Please add VAULT_DEV_ROOT_TOKEN_ID=<token> to .env.")
+        logger.error(
+            "VAULT_DEV_ROOT_TOKEN_ID not found in .env file. Please add VAULT_DEV_ROOT_TOKEN_ID=<token> to .env."
+        )
         raise ValueError("VAULT_DEV_ROOT_TOKEN_ID not found in .env file.")
 
     try:
@@ -151,7 +158,7 @@ def get_vault_client() -> hvac.Client:
         raise
 
 
-def get_minio_credentials_from_vault(vault_client: hvac.Client) -> Tuple[str, str]:
+def get_minio_credentials_from_vault(vault_client: hvac.Client) -> tuple[str, str]:
     """Fetch MinIO credentials from Vault.
 
     Args:
@@ -177,7 +184,7 @@ def get_minio_credentials_from_vault(vault_client: hvac.Client) -> Tuple[str, st
         raise
 
 
-def load_and_validate_env() -> Tuple[int, str, bool]:
+def load_and_validate_env() -> tuple[int, str, bool]:
     """Load and validate environment variables from .env file.
 
     Returns:
@@ -192,10 +199,14 @@ def load_and_validate_env() -> Tuple[int, str, bool]:
     minio_secure: str | None = os.getenv("MINIO_SECURE", "False")
 
     if not frequency:
-        logger.error("FREQUENCY not found in .env file. Please add FREQUENCY=<integer> to .env (seconds).")
+        logger.error(
+            "FREQUENCY not found in .env file. Please add FREQUENCY=<integer> to .env (seconds)."
+        )
         raise ValueError("FREQUENCY not found in .env file.")
     if not minio_endpoint:
-        logger.error("MINIO_ENDPOINT not found in .env file. Please add MINIO_ENDPOINT=<endpoint> to .env.")
+        logger.error(
+            "MINIO_ENDPOINT not found in .env file. Please add MINIO_ENDPOINT=<endpoint> to .env."
+        )
         raise ValueError("MINIO_ENDPOINT not found in .env file.")
 
     try:
@@ -204,13 +215,15 @@ def load_and_validate_env() -> Tuple[int, str, bool]:
             raise ValueError("FREQUENCY must be a positive integer.")
     except ValueError:
         logger.error("Invalid FREQUENCY value in .env. Must be a positive integer (seconds).")
-        raise ValueError("Invalid FREQUENCY value in .env. Must be a positive integer (seconds).")
+        raise ValueError(
+            "Invalid FREQUENCY value in .env. Must be a positive integer (seconds)."
+        ) from None
 
     try:
         minio_secure_bool: bool = minio_secure.lower() == "true"
     except AttributeError:
         logger.error("Invalid MINIO_SECURE value in .env. Must be 'True' or 'False'.")
-        raise ValueError("Invalid MINIO_SECURE value in .env. Must be 'True' or 'False'.")
+        raise ValueError("Invalid MINIO_SECURE value in .env. Must be 'True' or 'False'.") from None
 
     return frequency_int, minio_endpoint, minio_secure_bool
 
@@ -247,8 +260,11 @@ def initialize_minio_client(endpoint: str, access_key: str, secret_key: str, sec
 
 
 def generate_batch_data(
-    pii_generator: Iterator[Dict[str, str]], start_date: datetime.date, end_date: datetime.date, batch_num: int
-) -> Tuple[pd.DataFrame, str]:
+    pii_generator: Iterator[dict[str, str]],
+    start_date: datetime.date,
+    end_date: datetime.date,
+    batch_num: int,
+) -> tuple[pd.DataFrame, str]:
     """Generate a batch of sales data and return the DataFrame and object name.
 
     Args:
@@ -265,7 +281,7 @@ def generate_batch_data(
     """
     try:
         num_rows: int = random.randint(50, 200)
-        data: list[Dict[str, Any]] = []
+        data: list[dict[str, Any]] = []
 
         for _ in range(num_rows):
             category: str = random.choice(PRODUCT_CATEGORIES)
@@ -278,13 +294,13 @@ def generate_batch_data(
             data_collected_at: str = datetime.date.today().strftime("%Y-%m-%d")
             product_title: str = generate_random_product_title(category)
 
-            pii: Dict[str, str] = next(pii_generator)
+            pii: dict[str, str] = next(pii_generator)
 
             order_id: str = "".join(random.choices(string.ascii_uppercase + string.digits, k=10))
             quantity: int = random.randint(1, 5)
             order_date: str = generate_random_date(start_date, end_date).strftime("%Y-%m-%d")
 
-            row: Dict[str, Any] = {
+            row: dict[str, Any] = {
                 "order_id": order_id,
                 "customer_name": pii["customer_name"],
                 "customer_email": pii["customer_email"],
@@ -362,22 +378,28 @@ def main() -> None:
         minio_access_key, minio_secret_key = get_minio_credentials_from_vault(vault_client)
 
         # Initialize MinIO client
-        minio_client = initialize_minio_client(minio_endpoint, minio_access_key, minio_secret_key, minio_secure)
+        minio_client = initialize_minio_client(
+            minio_endpoint, minio_access_key, minio_secret_key, minio_secure
+        )
 
         # Initialize PII data generator
-        pii_generator: Iterator[Dict[str, str]] = generate_pii_data()
+        pii_generator: Iterator[dict[str, str]] = generate_pii_data()
 
         # Generate batches indefinitely with frequency delay
         batch_num: int = 1
         start_date: datetime.date = datetime.date(2023, 1, 1)
         end_date: datetime.date = datetime.date.today()
 
-        logger.info(f"Starting data generation with frequency of {frequency} seconds between batches.")
+        logger.info(
+            f"Starting data generation with frequency of {frequency} seconds between batches."
+        )
 
         while True:
             try:
                 # Generate batch data
-                df, object_name = generate_batch_data(pii_generator, start_date, end_date, batch_num)
+                df, object_name = generate_batch_data(
+                    pii_generator, start_date, end_date, batch_num
+                )
 
                 # Upload to MinIO
                 upload_batch_to_minio(minio_client, df, object_name)

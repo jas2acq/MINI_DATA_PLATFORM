@@ -95,8 +95,7 @@ def get_minio_client(vault_client: hvac.Client) -> Minio:
                 logger.info(f"Using CA certificate for SSL verification: {ca_cert_path}")
             else:
                 logger.warning(
-                    f"CA certificate not found at {ca_cert_path}, "
-                    "using default SSL verification"
+                    f"CA certificate not found at {ca_cert_path}, using default SSL verification"
                 )
 
         client = Minio(

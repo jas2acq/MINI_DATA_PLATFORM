@@ -1,6 +1,5 @@
 """Unit tests for MinIO ingestion module."""
 
-import io
 import os
 from unittest.mock import MagicMock, patch
 

@@ -93,10 +93,7 @@ def get_postgres_connection(vault_client: hvac.Client) -> PgConnection:
             connection_params["sslrootcert"] = ca_cert_path
             logger.info(f"Using CA certificate for SSL verification: {ca_cert_path}")
         else:
-            logger.warning(
-                f"CA certificate not found at {ca_cert_path}, "
-                "SSL verification may fail"
-            )
+            logger.warning(f"CA certificate not found at {ca_cert_path}, SSL verification may fail")
 
         connection = psycopg2.connect(**connection_params)
 

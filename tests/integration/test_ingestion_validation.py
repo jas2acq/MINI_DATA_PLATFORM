@@ -4,7 +4,6 @@ import io
 from unittest.mock import MagicMock
 
 import pandas as pd
-import pytest
 
 from dags.src.ingestion.minio_client import get_raw_data
 from dags.src.utils.schemas import SalesRecord

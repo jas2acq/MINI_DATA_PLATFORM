@@ -141,7 +141,7 @@ def test_send_success_notification_content_format(mock_success_context):
         assert "<strong>DAG:</strong>" in html_content
         assert "<strong>Task:</strong>" in html_content
         assert "<strong>Execution Date:</strong>" in html_content
-        assert 'color: green' in html_content
+        assert "color: green" in html_content
 
 
 def test_send_failure_notification_content_format(mock_failure_context):
@@ -159,7 +159,7 @@ def test_send_failure_notification_content_format(mock_failure_context):
         assert "<h3>Exception Details:</h3>" in html_content
         assert "<pre>" in html_content
         assert "View Task Logs" in html_content
-        assert 'color: red' in html_content
+        assert "color: red" in html_content
 
 
 def test_send_success_notification_recipient_list(mock_success_context):
