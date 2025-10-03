@@ -1,0 +1,40 @@
+# KES Server Configuration
+address: 0.0.0.0:7373
+
+# TLS configuration
+tls:
+  key: /config/kes-server.key
+  cert: /config/kes-server.cert
+
+# Admin identity - using AppRole ID as placeholder
+admin:
+  identity: disabled
+
+# API access policy for MinIO
+policy:
+  minio-server:
+    allow:
+      - /v1/key/create/*
+      - /v1/key/generate/*
+      - /v1/key/decrypt/*
+    identities:
+      - a7e87098740230e31fa2de44deb0d78a0dd13a3b791eede85ca731fe29338d53
+
+# Vault keystore configuration
+keystore:
+  vault:
+    endpoint: http://vault:8200
+    approle:
+      id: 6d3a513a-2898-b00e-d57f-4d26db474ee0
+      secret: 1e2482b5-6016-ef3e-6b35-38a10f826a09
+      retry: 15s
+    transit:
+      engine: transit
+      key: minio-sse-key
+    status:
+      ping: 10s
+
+# Logging
+log:
+  error: on
+  audit: off
