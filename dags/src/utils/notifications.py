@@ -33,7 +33,7 @@ def send_success_notification(context: dict[str, Any]) -> None:
         else "Unknown Date"
     )
 
-    subject = f"✅ Success: {dag_id} - {task_id}"
+    subject = f"Success: {dag_id} - {task_id}"
     html_content = f"""
     <html>
       <body>
@@ -85,7 +85,7 @@ def send_failure_notification(context: dict[str, Any]) -> None:
     exception = context.get("exception", "No exception details available")
     log_url = context.get("task_instance").log_url if context.get("task_instance") else "#"
 
-    subject = f"❌ Failure: {dag_id} - {task_id}"
+    subject = f"Failure: {dag_id} - {task_id}"
     html_content = f"""
     <html>
       <body>
