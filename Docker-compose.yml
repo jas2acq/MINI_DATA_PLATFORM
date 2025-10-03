@@ -1,0 +1,238 @@
+x-airflow-common: &airflow-common
+  image: apache/airflow:2.8.1
+  user: "${AIRFLOW_UID:-50000}:0"
+  environment:
+    - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+    - AIRFLOW__CORE__LOAD_EXAMPLES=false
+    - VAULT_ADDR=http://vault:8200
+    - VAULT_TOKEN=${VAULT_DEV_ROOT_TOKEN_ID}
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./logs/airflow:/opt/airflow/logs
+    - ./plugins:/opt/airflow/plugins
+    - ./certs:/opt/airflow/certs
+    - ./requirements.txt:/opt/airflow/requirements.txt
+  depends_on:
+    postgres-airflow:
+      condition: service_healthy
+    vault:
+      condition: service_started
+  restart: unless-stopped
+
+services:
+  # ---------------------------------
+  # SECURITY & STORAGE
+  # ---------------------------------
+  vault:
+    image: hashicorp/vault:latest
+    container_name: vault
+    ports:
+      - "8200:8200"
+    environment:
+      - VAULT_DEV_ROOT_TOKEN_ID=${VAULT_DEV_ROOT_TOKEN_ID}
+      - VAULT_ADDR=http://127.0.0.1:8200
+    cap_add:
+      - IPC_LOCK
+    command: server -dev -dev-root-token-id="${VAULT_DEV_ROOT_TOKEN_ID}"
+    volumes:
+      - vault_data:/vault/file
+    healthcheck:
+      test: ["CMD", "vault", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - secure_network
+    restart: unless-stopped
+
+  kes:
+    image: minio/kes:latest
+    container_name: kes
+    ports:
+      - "7373:7373"
+    command: server --config=/config/kes-config.yml
+    volumes:
+      - ./kes/config:/config
+      - ./certs/kes/kes-server.cert:/config/kes-server.cert
+      - ./certs/kes/kes-server.key:/config/kes-server.key
+      - ./certs/ca.crt:/config/ca.crt
+    depends_on:
+      vault:
+        condition: service_healthy
+    networks:
+      - secure_network
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    entrypoint: ["/scripts/minio-entrypoint.sh"]
+    environment:
+      - VAULT_ADDR=http://vault:8200
+      - VAULT_TOKEN=${VAULT_DEV_ROOT_TOKEN_ID}
+      - MINIO_KMS_KES_ENDPOINT=https://kes:7373
+      - MINIO_KMS_KES_KEY_NAME=minio-sse-key
+      - MINIO_KMS_KES_CAPATH=/certs/ca.crt
+      - MINIO_SERVER_CERT=/certs/public.crt
+      - MINIO_SERVER_KEY=/certs/private.key
+      - MINIO_KMS_KES_CERT_FILE=/certs/client.crt
+      - MINIO_KMS_KES_KEY_FILE=/certs/client.key
+    volumes:
+      - ./minio/data:/data
+      - ./certs/minio:/certs
+      - ./certs/ca.crt:/certs/ca.crt
+      - ./scripts:/scripts
+    depends_on:
+      kes:
+        condition: service_started
+      vault:
+        condition: service_started
+    networks:
+      - secure_network
+    restart: unless-stopped
+
+  # ---------------------------------
+  # DATABASES
+  # ---------------------------------
+  postgres-airflow:
+    image: postgres:13
+    container_name: postgres-airflow
+    entrypoint: ["/scripts/postgres-airflow-init-vault.sh"]
+    command: >
+      postgres -c ssl=on
+      -c ssl_cert_file=/var/lib/postgresql/server.crt
+      -c ssl_key_file=/var/lib/postgresql/server.key
+    environment:
+      - VAULT_ADDR=http://vault:8200
+      - VAULT_TOKEN=${VAULT_DEV_ROOT_TOKEN_ID}
+    volumes:
+      - postgres_airflow_db:/var/lib/postgresql/data
+      - ./certs/postgres-airflow/server.crt:/var/lib/postgresql/server.crt
+      - ./certs/postgres-airflow/server.key:/var/lib/postgresql/server.key
+      - ./scripts:/scripts
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d shadowdb"]
+      interval: 10s
+      retries: 5
+    depends_on:
+      vault:
+        condition: service_started
+    networks:
+      - secure_network
+    restart: unless-stopped
+
+  postgres-analytics:
+    image: postgres:13
+    container_name: postgres-analytics
+    ports:
+      - "5434:5432"
+    entrypoint: ["/scripts/postgres-init-vault.sh"]
+    command: >
+      postgres -c ssl=on
+      -c ssl_cert_file=/var/lib/postgresql/server.crt
+      -c ssl_key_file=/var/lib/postgresql/server.key
+    environment:
+      - VAULT_ADDR=http://vault:8200
+      - VAULT_TOKEN=${VAULT_DEV_ROOT_TOKEN_ID}
+      - POSTGRES_DB=${POSTGRES_ANALYTICS_DB}
+    volumes:
+      - ./certs/postgres/server.crt:/var/lib/postgresql/server.crt
+      - ./certs/postgres/server.key:/var/lib/postgresql/server.key
+      - ./scripts:/scripts
+      - pg_analytics_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d ${POSTGRES_ANALYTICS_DB}"]
+      interval: 10s
+      retries: 5
+    depends_on:
+      vault:
+        condition: service_started
+    networks:
+      - secure_network
+    restart: unless-stopped
+
+  # ---------------------------------
+  # PROCESSING & VISUALIZATION
+  # ---------------------------------
+  airflow-webserver:
+    <<: *airflow-common
+    container_name: airflow-webserver
+    entrypoint: ["/scripts/airflow-webserver-entrypoint.sh"]
+    ports:
+      - "8080:8080"
+    environment:
+      - VAULT_ADDR=http://vault:8200
+      - VAULT_TOKEN=${VAULT_DEV_ROOT_TOKEN_ID}
+      - AIRFLOW_WEBSERVER_WEB_SERVER_PORT=8080
+      - AIRFLOW_WEBSERVER_WEB_SERVER_SSL_CERT=/opt/airflow/certs/server.crt
+      - AIRFLOW_WEBSERVER_WEB_SERVER_SSL_KEY=/opt/airflow/certs/server.key
+    volumes:
+      - ./certs/airflow/server.crt:/opt/airflow/certs/server.crt
+      - ./certs/airflow/server.key:/opt/airflow/certs/server.key
+      - ./scripts:/scripts
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    networks:
+      - secure_network
+
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: airflow-scheduler
+    entrypoint: ["/scripts/airflow-scheduler-entrypoint.sh"]
+    environment:
+      - VAULT_ADDR=http://vault:8200
+      - VAULT_TOKEN=${VAULT_DEV_ROOT_TOKEN_ID}
+    volumes:
+      - ./scripts:/scripts
+    networks:
+      - secure_network
+
+  airflow-init:
+    <<: *airflow-common
+    container_name: airflow-init
+    user: "0:0"
+    entrypoint: ["/scripts/airflow-init-db.sh"]
+    volumes:
+      - ./scripts:/scripts
+    networks:
+      - secure_network
+
+  metabase:
+    image: metabase/metabase:latest
+    container_name: metabase
+    entrypoint: ["/scripts/metabase-entrypoint.sh"]
+    ports:
+      - "3000:3000"
+    environment:
+      - VAULT_ADDR=http://vault:8200
+      - VAULT_TOKEN=${VAULT_DEV_ROOT_TOKEN_ID}
+      - MB_DB_URL=jdbc:postgresql://postgres-analytics:5432/${POSTGRES_ANALYTICS_DB}?ssl=false
+    volumes:
+      - ./certs/ca.crt:/app/certs/ca.crt
+      - ./scripts:/scripts
+      - metabase_data:/metabase-data
+    depends_on:
+      postgres-analytics:
+        condition: service_healthy
+      vault:
+        condition: service_started
+    networks:
+      - secure_network
+    restart: unless-stopped
+
+volumes:
+  vault_data:
+  postgres_airflow_db:
+  pg_analytics_data:
+  metabase_data:
+
+networks:
+  secure_network:
+    driver: bridge
