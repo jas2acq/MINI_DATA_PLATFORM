@@ -10,6 +10,7 @@ from collections.abc import Iterator
 
 import hvac
 import pandas as pd
+import urllib3
 from minio.error import S3Error
 
 from dags.src.utils.helpers import setup_logger
@@ -67,11 +68,13 @@ def get_minio_credentials(vault_client: hvac.Client) -> tuple[str, str, str, boo
 def get_minio_client(vault_client: hvac.Client) -> Minio:
     """Initialize and return a MinIO client using credentials from Vault.
 
+    Uses strict SSL certificate verification for secure HTTPS connections.
+
     Args:
         vault_client: Authenticated Vault client instance.
 
     Returns:
-        Initialized Minio client.
+        Initialized Minio client with SSL verification.
 
     Raises:
         hvac.exceptions.VaultError: If credential retrieval fails.
@@ -80,11 +83,28 @@ def get_minio_client(vault_client: hvac.Client) -> Minio:
     try:
         endpoint, access_key, secret_key, secure = get_minio_credentials(vault_client)
 
+        # Create custom HTTP client with strict SSL verification
+        http_client = None
+        if secure:
+            ca_cert_path = os.getenv("MINIO_CA_CERT", "/opt/airflow/certs/ca.crt")
+            if os.path.exists(ca_cert_path):
+                http_client = urllib3.PoolManager(
+                    cert_reqs="CERT_REQUIRED",
+                    ca_certs=ca_cert_path,
+                )
+                logger.info(f"Using CA certificate for SSL verification: {ca_cert_path}")
+            else:
+                logger.warning(
+                    f"CA certificate not found at {ca_cert_path}, "
+                    "using default SSL verification"
+                )
+
         client = Minio(
             endpoint=endpoint,
             access_key=access_key,
             secret_key=secret_key,
             secure=secure,
+            http_client=http_client,
         )
 
         # Verify connection by checking if bucket exists
