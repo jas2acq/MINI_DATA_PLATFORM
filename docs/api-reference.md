@@ -50,19 +50,21 @@ Pydantic model for sales data validation.
 
 **Fields:**
 - `order_id`: str
-- `customer_email`: str
+- `customer_email`: EmailStr
 - `customer_phone`: str
 - `customer_name`: str
 - `customer_address`: str
 - `product_title`: str
 - `product_category`: str
-- `product_rating`: float
+- `product_rating`: float (1.0-5.0)
 - `is_best_seller`: bool
-- `quantity`: int
-- `original_price`: float
-- `discounted_price`: float
-- `order_date`: str
-- `delivery_date`: str
+- `quantity`: int (≥1)
+- `original_price`: float (>0, max 2 decimal places)
+- `discounted_price`: float (>0, max 2 decimal places)
+- `discount_percentage`: int (0-100)
+- `order_date`: date
+- `delivery_date`: date (must be ≥ order_date)
+- `data_collected_at`: date
 
 **Validators:**
 - Email format validation
@@ -115,29 +117,41 @@ Get object size in bytes.
 **Returns:**
 - Object size in bytes
 
-#### `get_raw_data(minio_client: Minio, object_key: str) -> pd.DataFrame | Generator`
-Download CSV from MinIO as DataFrame or chunked generator.
+#### `get_raw_data(minio_client: Minio, object_key: str, use_chunking: bool | None = None, chunk_size: int = 10000) -> pd.DataFrame | Iterator[pd.DataFrame]`
+Download CSV from MinIO as DataFrame or chunked iterator.
 
 **Parameters:**
 - `minio_client`: MinIO client
 - `object_key`: S3 object key
+- `use_chunking`: Force chunking mode (None=auto-detect based on size)
+- `chunk_size`: Number of rows per chunk (default: 10000)
 
 **Returns:**
-- DataFrame if <1GB, Generator of DataFrames if >1GB
+- DataFrame if <1GB (or use_chunking=False), Iterator of DataFrames if >1GB (or use_chunking=True)
+
+**Notes:**
+- Automatically parses date columns (order_date, delivery_date, data_collected_at) to datetime64
+- Only parses columns that exist in the CSV to avoid errors
+- Uses chunking for files >1GB to manage memory efficiently
 
 ## Validation Module
 
 ### validator.py
 
-#### `validate_data(data: pd.DataFrame | Generator, schema: Type[BaseModel]) -> tuple`
+#### `validate_data(data: pd.DataFrame | Iterator[pd.DataFrame], schema: Type[BaseModel]) -> tuple | Iterator[tuple]`
 Validate DataFrame against Pydantic schema.
 
 **Parameters:**
-- `data`: DataFrame or generator of DataFrames
+- `data`: DataFrame or iterator of DataFrames (for chunked processing)
 - `schema`: Pydantic model class
 
 **Returns:**
-- Tuple of (valid_df, invalid_df)
+- Tuple of (valid_df, invalid_df) or iterator of tuples for chunked data
+
+**Notes:**
+- Preserves pandas datetime64 types after validation
+- Converts Pydantic date objects back to datetime64 for compatibility
+- Invalid records include `validation_error` column with failure details
 
 ## Transformation Module
 
@@ -155,11 +169,20 @@ Apply all transformations to sales data.
 #### `_hash_email(email: str) -> str`
 Hash email address using SHA-256.
 
+**Returns:**
+- 64-character hexadecimal hash (case-insensitive)
+
 #### `_redact_phone(phone: str) -> str`
 Redact phone number, keeping last 4 digits.
 
+**Returns:**
+- Format: `***-***-XXXX` where XXXX is last 4 digits
+
 #### `_redact_address(address: str) -> str`
-Redact address, keeping street name.
+Redact address with asterisk pattern.
+
+**Returns:**
+- Redacted pattern: `*** **** **`
 
 ## Loading Module
 
