@@ -61,6 +61,8 @@ def get_postgres_credentials(vault_client: hvac.Client) -> dict[str, str]:
 def get_postgres_connection(vault_client: hvac.Client) -> PgConnection:
     """Establish and return a PostgreSQL database connection.
 
+    Uses strict SSL certificate verification for secure connections.
+
     Args:
         vault_client: Authenticated Vault client instance.
 
@@ -73,17 +75,35 @@ def get_postgres_connection(vault_client: hvac.Client) -> PgConnection:
     try:
         credentials = get_postgres_credentials(vault_client)
 
-        connection = psycopg2.connect(
-            host=credentials["host"],
-            port=credentials["port"],
-            dbname=credentials["dbname"],
-            user=credentials["user"],
-            password=credentials["password"],
-            sslmode="require",  # Enforce SSL/TLS
-            connect_timeout=30,
-        )
+        # Get CA certificate path for SSL verification
+        ca_cert_path = os.getenv("POSTGRES_CA_CERT", "/opt/airflow/certs/ca.crt")
 
-        logger.info(f"Successfully connected to PostgreSQL at {credentials['host']}")
+        connection_params = {
+            "host": credentials["host"],
+            "port": credentials["port"],
+            "dbname": credentials["dbname"],
+            "user": credentials["user"],
+            "password": credentials["password"],
+            "sslmode": "verify-full",  # Enforce strict SSL certificate verification
+            "connect_timeout": 30,
+        }
+
+        # Add CA certificate if it exists
+        if os.path.exists(ca_cert_path):
+            connection_params["sslrootcert"] = ca_cert_path
+            logger.info(f"Using CA certificate for SSL verification: {ca_cert_path}")
+        else:
+            logger.warning(
+                f"CA certificate not found at {ca_cert_path}, "
+                "SSL verification may fail"
+            )
+
+        connection = psycopg2.connect(**connection_params)
+
+        logger.info(
+            f"Successfully connected to PostgreSQL at {credentials['host']} "
+            "with SSL certificate verification"
+        )
         return connection
 
     except psycopg2.Error as e:
