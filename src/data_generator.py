@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from faker import Faker
 from minio import Minio
 from minio.error import S3Error
+import hvac
 import io
 
 # Configure logging to append to a file in logs directory
@@ -118,11 +119,69 @@ def generate_pii_data() -> Iterator[Dict[str, str]]:
             raise
 
 
-def load_and_validate_env() -> Tuple[int, str, str, str, bool]:
+def get_vault_client() -> hvac.Client:
+    """Initialize and authenticate Vault client.
+
+    Returns:
+        Authenticated hvac.Client instance.
+
+    Raises:
+        ValueError: If Vault environment variables are missing or authentication fails.
+        Exception: If Vault client initialization fails.
+    """
+    vault_addr: str | None = os.getenv("VAULT_ADDR")
+    vault_token: str | None = os.getenv("VAULT_DEV_ROOT_TOKEN_ID")
+
+    if not vault_addr:
+        logger.error("VAULT_ADDR not found in .env file. Please add VAULT_ADDR=<vault_url> to .env.")
+        raise ValueError("VAULT_ADDR not found in .env file.")
+    if not vault_token:
+        logger.error("VAULT_DEV_ROOT_TOKEN_ID not found in .env file. Please add VAULT_DEV_ROOT_TOKEN_ID=<token> to .env.")
+        raise ValueError("VAULT_DEV_ROOT_TOKEN_ID not found in .env file.")
+
+    try:
+        client: hvac.Client = hvac.Client(url=vault_addr, token=vault_token)
+        if not client.is_authenticated():
+            logger.error("Vault authentication failed. Check VAULT_DEV_ROOT_TOKEN_ID.")
+            raise ValueError("Vault authentication failed.")
+        logger.info("Successfully authenticated with Vault")
+        return client
+    except Exception as e:
+        logger.error(f"Failed to initialize Vault client: {str(e)}")
+        raise
+
+
+def get_minio_credentials_from_vault(vault_client: hvac.Client) -> Tuple[str, str]:
+    """Fetch MinIO credentials from Vault.
+
+    Args:
+        vault_client: Authenticated Vault client.
+
+    Returns:
+        Tuple of (access_key, secret_key).
+
+    Raises:
+        Exception: If fetching credentials from Vault fails.
+    """
+    try:
+        secret_response = vault_client.secrets.kv.v2.read_secret_version(
+            path="minio", mount_point="kv"
+        )
+        secrets: dict = secret_response["data"]["data"]
+        access_key: str = secrets["root_user"]
+        secret_key: str = secrets["root_password"]
+        logger.info("Successfully fetched MinIO credentials from Vault")
+        return access_key, secret_key
+    except Exception as e:
+        logger.error(f"Failed to fetch MinIO credentials from Vault: {str(e)}")
+        raise
+
+
+def load_and_validate_env() -> Tuple[int, str, bool]:
     """Load and validate environment variables from .env file.
 
     Returns:
-        Tuple of (frequency_int, minio_endpoint, minio_access_key, minio_secret_key, minio_secure).
+        Tuple of (frequency_int, minio_endpoint, minio_secure).
 
     Raises:
         ValueError: If any required environment variable is missing or invalid.
@@ -130,8 +189,6 @@ def load_and_validate_env() -> Tuple[int, str, str, str, bool]:
     load_dotenv()
     frequency: str | None = os.getenv("FREQUENCY")
     minio_endpoint: str | None = os.getenv("MINIO_ENDPOINT")
-    minio_access_key: str | None = os.getenv("MINIO_ACCESS_KEY")
-    minio_secret_key: str | None = os.getenv("MINIO_SECRET_KEY")
     minio_secure: str | None = os.getenv("MINIO_SECURE", "False")
 
     if not frequency:
@@ -140,12 +197,6 @@ def load_and_validate_env() -> Tuple[int, str, str, str, bool]:
     if not minio_endpoint:
         logger.error("MINIO_ENDPOINT not found in .env file. Please add MINIO_ENDPOINT=<endpoint> to .env.")
         raise ValueError("MINIO_ENDPOINT not found in .env file.")
-    if not minio_access_key:
-        logger.error("MINIO_ACCESS_KEY not found in .env file. Please add MINIO_ACCESS_KEY=<access_key> to .env.")
-        raise ValueError("MINIO_ACCESS_KEY not found in .env file.")
-    if not minio_secret_key:
-        logger.error("MINIO_SECRET_KEY not found in .env file. Please add MINIO_SECRET_KEY=<secret_key> to .env.")
-        raise ValueError("MINIO_SECRET_KEY not found in .env file.")
 
     try:
         frequency_int: int = int(frequency)
@@ -161,7 +212,7 @@ def load_and_validate_env() -> Tuple[int, str, str, str, bool]:
         logger.error("Invalid MINIO_SECURE value in .env. Must be 'True' or 'False'.")
         raise ValueError("Invalid MINIO_SECURE value in .env. Must be 'True' or 'False'.")
 
-    return frequency_int, minio_endpoint, minio_access_key, minio_secret_key, minio_secure_bool
+    return frequency_int, minio_endpoint, minio_secure_bool
 
 
 def initialize_minio_client(endpoint: str, access_key: str, secret_key: str, secure: bool) -> Minio:
@@ -294,16 +345,21 @@ def main() -> None:
     """Main function to generate sales data CSVs and upload to MinIO bucket.
 
     Orchestrates data generation and upload by reading environment variables,
-    initializing MinIO client, and generating batches at specified intervals.
+    fetching credentials from Vault, initializing MinIO client, and generating
+    batches at specified intervals.
 
     Raises:
         ValueError: If required environment variables are missing or invalid.
         S3Error: If an error occurs during MinIO operations.
-        Exception: If an error occurs during batch generation.
+        Exception: If an error occurs during batch generation or Vault operations.
     """
     try:
         # Load and validate environment variables
-        frequency, minio_endpoint, minio_access_key, minio_secret_key, minio_secure = load_and_validate_env()
+        frequency, minio_endpoint, minio_secure = load_and_validate_env()
+
+        # Initialize Vault client and fetch MinIO credentials
+        vault_client = get_vault_client()
+        minio_access_key, minio_secret_key = get_minio_credentials_from_vault(vault_client)
 
         # Initialize MinIO client
         minio_client = initialize_minio_client(minio_endpoint, minio_access_key, minio_secret_key, minio_secure)
