@@ -1,0 +1,72 @@
+# Version control
+.git
+.gitignore
+.gitattributes
+
+# Virtual environments
+.venv
+venv/
+ENV/
+env/
+.virtualenv
+
+# Python cache and compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Testing and coverage
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*.swn
+.DS_Store
+*.sublime-project
+*.sublime-workspace
+
+# Logs and temporary files
+logs/
+*.log
+*.tmp
+*.temp
+
+# Data and certificates (not needed in container)
+data/
+certs/
+kes/
+minio/
+
+# Configuration and scripts (handled via volumes)
+scripts/
+Docker-compose.yml
+docker-compose.override.yml
+
+# Environment files (secrets should not be in image)
+.env
+.env.local
+.env.*.local
+
+# Documentation
+*.md
+docs/
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# Other
+*.bak
+*.orig
+.cache/
