@@ -1,0 +1,42 @@
+# KES Server Configuration Template
+# Copy this file to kes-config.yml and update with actual values
+
+address: 0.0.0.0:7373
+
+# TLS configuration
+tls:
+  key: /config/kes-server.key
+  cert: /config/kes-server.cert
+
+# Admin identity
+admin:
+  identity: disabled
+
+# API access policy for MinIO
+policy:
+  minio-server:
+    allow:
+      - /v1/key/create/*
+      - /v1/key/generate/*
+      - /v1/key/decrypt/*
+    identities:
+      - <REPLACE_WITH_MINIO_IDENTITY_HASH>
+
+# Vault keystore configuration
+keystore:
+  vault:
+    endpoint: http://vault:8200
+    approle:
+      id: <REPLACE_WITH_VAULT_APPROLE_ID>
+      secret: <REPLACE_WITH_VAULT_APPROLE_SECRET>
+      retry: 15s
+    transit:
+      engine: transit
+      key: minio-sse-key
+    status:
+      ping: 10s
+
+# Logging
+log:
+  error: on
+  audit: off
