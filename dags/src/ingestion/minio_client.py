@@ -186,31 +186,39 @@ def get_raw_data(
         response.release_conn()
 
         # Determine which date columns to parse (only if they exist)
-        date_columns = ["order_date", "delivery_date", "data_collected_at"]
+        potential_date_columns = ["order_date", "delivery_date", "data_collected_at"]
+
+        # Read CSV header to check which columns exist
+        try:
+            # Quick read to get column names only (use fresh BytesIO for each read)
+            df_header = pd.read_csv(io.BytesIO(data), nrows=0)
+            available_columns = df_header.columns.tolist()
+
+            # Only parse dates for columns that actually exist
+            date_columns = [col for col in potential_date_columns if col in available_columns]
+        except Exception:
+            # If header read fails, don't parse any dates
+            date_columns = []
 
         # Convert to DataFrame or iterator
         if use_chunking:
             logger.info(f"Reading '{object_key}' in chunks of {chunk_size} rows")
-            # Try to parse dates, but don't fail if columns are missing
-            try:
+            if date_columns:
                 return pd.read_csv(
                     io.BytesIO(data),
                     chunksize=chunk_size,
                     parse_dates=date_columns,
                 )
-            except ValueError:
-                # If date parsing fails due to missing columns, read without parsing
+            else:
                 return pd.read_csv(io.BytesIO(data), chunksize=chunk_size)
         else:
             logger.info(f"Reading '{object_key}' as single DataFrame")
-            # Try to parse dates, but don't fail if columns are missing
-            try:
+            if date_columns:
                 return pd.read_csv(
                     io.BytesIO(data),
                     parse_dates=date_columns,
                 )
-            except ValueError:
-                # If date parsing fails due to missing columns, read without parsing
+            else:
                 return pd.read_csv(io.BytesIO(data))
 
     except S3Error as e:

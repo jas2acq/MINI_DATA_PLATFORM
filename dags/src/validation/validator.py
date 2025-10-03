@@ -70,8 +70,8 @@ def _validate_single_dataframe(
             record_dict = row.to_dict()
             validated_record = schema(**record_dict)
 
-            # Add validated record to valid list
-            valid_records.append(validated_record.model_dump())
+            # Add validated record to valid list (mode='python' preserves datetime objects)
+            valid_records.append(validated_record.model_dump(mode='python'))
 
         except ValidationError as e:
             # Log validation failure
@@ -96,6 +96,13 @@ def _validate_single_dataframe(
     # Create result DataFrames
     valid_df = pd.DataFrame(valid_records) if valid_records else pd.DataFrame()
     invalid_df = pd.DataFrame(invalid_records) if invalid_records else pd.DataFrame()
+
+    # Convert date columns back to datetime64 (Pydantic converts Timestamps to date objects)
+    if len(valid_df) > 0:
+        date_columns = ["order_date", "delivery_date", "data_collected_at"]
+        for col in date_columns:
+            if col in valid_df.columns:
+                valid_df[col] = pd.to_datetime(valid_df[col])
 
     # Log results
     logger.info(

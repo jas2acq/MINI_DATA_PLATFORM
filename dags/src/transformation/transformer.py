@@ -171,11 +171,11 @@ def _redact_address(address: str) -> str:
         address: Address to redact.
 
     Returns:
-        Redacted address (e.g., "City, State REDACTED").
+        Redacted address pattern with asterisks.
     """
-    # Simple redaction: return placeholder
+    # Simple redaction: return asterisk pattern
     # In production, might extract city/state using regex
-    return "Address REDACTED"
+    return "*** **** **"
 
 
 def _calculate_profit(df: pd.DataFrame) -> pd.DataFrame:
