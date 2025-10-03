@@ -4,6 +4,7 @@ x-airflow-common: &airflow-common
   environment:
     - AIRFLOW__CORE__EXECUTOR=LocalExecutor
     - AIRFLOW__CORE__LOAD_EXAMPLES=false
+    - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW__CORE__FERNET_KEY}
     - VAULT_ADDR=http://vault:8200
     - VAULT_TOKEN=${VAULT_DEV_ROOT_TOKEN_ID}
   volumes:
