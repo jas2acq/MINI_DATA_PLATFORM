@@ -23,15 +23,14 @@ def send_success_notification(context: dict[str, Any]) -> None:
     Raises:
         Exception: If email sending fails (logged but not raised to avoid task failure).
     """
-    dag_id = context.get("dag").dag_id if context.get("dag") else "Unknown DAG"
-    task_id = (
-        context.get("task_instance").task_id if context.get("task_instance") else "Unknown Task"
-    )
-    execution_date = (
-        context.get("execution_date").isoformat()
-        if context.get("execution_date")
-        else "Unknown Date"
-    )
+    dag = context.get("dag")
+    dag_id = dag.dag_id if dag else "Unknown DAG"
+
+    task_instance = context.get("task_instance")
+    task_id = task_instance.task_id if task_instance else "Unknown Task"
+
+    execution_date_obj = context.get("execution_date")
+    execution_date = execution_date_obj.isoformat() if execution_date_obj else "Unknown Date"
 
     subject = f"Success: {dag_id} - {task_id}"
     html_content = f"""
@@ -73,17 +72,16 @@ def send_failure_notification(context: dict[str, Any]) -> None:
     Raises:
         Exception: If email sending fails (logged but not raised to avoid complicating failure).
     """
-    dag_id = context.get("dag").dag_id if context.get("dag") else "Unknown DAG"
-    task_id = (
-        context.get("task_instance").task_id if context.get("task_instance") else "Unknown Task"
-    )
-    execution_date = (
-        context.get("execution_date").isoformat()
-        if context.get("execution_date")
-        else "Unknown Date"
-    )
+    dag = context.get("dag")
+    dag_id = dag.dag_id if dag else "Unknown DAG"
+
+    task_instance = context.get("task_instance")
+    task_id = task_instance.task_id if task_instance else "Unknown Task"
+
+    execution_date_obj = context.get("execution_date")
+    execution_date = execution_date_obj.isoformat() if execution_date_obj else "Unknown Date"
     exception = context.get("exception", "No exception details available")
-    log_url = context.get("task_instance").log_url if context.get("task_instance") else "#"
+    log_url = task_instance.log_url if task_instance else "#"
 
     subject = f"Failure: {dag_id} - {task_id}"
     html_content = f"""

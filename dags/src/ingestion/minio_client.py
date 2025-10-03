@@ -11,6 +11,7 @@ from collections.abc import Iterator
 import hvac
 import pandas as pd
 import urllib3
+from minio.commonconfig import CopySource
 from minio.error import S3Error
 
 from dags.src.utils.helpers import setup_logger
@@ -108,7 +109,7 @@ def get_minio_client(vault_client: hvac.Client) -> Minio:
 
         # Verify connection by checking if bucket exists
         if not client.bucket_exists(BUCKET_NAME):
-            raise S3Error(f"Bucket '{BUCKET_NAME}' does not exist")
+            raise ValueError(f"Bucket '{BUCKET_NAME}' does not exist")
 
         logger.info(f"Successfully connected to MinIO at {endpoint}")
         return client
@@ -136,6 +137,8 @@ def get_object_size(minio_client: Minio, object_key: str) -> int:
     """
     try:
         stat = minio_client.stat_object(BUCKET_NAME, object_key)
+        if stat.size is None:
+            raise ValueError(f"Object '{object_key}' has no size information")
         return stat.size
     except S3Error as e:
         logger.error(f"Failed to get size for object '{object_key}': {str(e)}")
@@ -262,7 +265,7 @@ def move_processed_file(
         minio_client.copy_object(
             bucket_name=BUCKET_NAME,
             object_name=destination_key,
-            source=f"{BUCKET_NAME}/{source_key}",
+            source=CopySource(BUCKET_NAME, source_key),
         )
         logger.info(f"Copied '{source_key}' to '{destination_key}'")
 

@@ -6,6 +6,8 @@ ingestion, validation, transformation, and loading into PostgreSQL.
 
 import io
 
+import pandas as pd
+from minio import Minio
 from minio.error import S3Error
 
 from dags.src.ingestion.minio_client import (
@@ -26,8 +28,8 @@ logger = setup_logger("pipeline", "logs/pipeline.log")
 
 
 def save_invalid_data_to_quarantine(
-    minio_client,
-    invalid_df,
+    minio_client: Minio,
+    invalid_df: pd.DataFrame,
     original_file_key: str,
 ) -> None:
     """Save invalid records to quarantine prefix in MinIO.
@@ -151,12 +153,12 @@ def run_pipeline(file_key: str) -> None:
             valid_df, invalid_df = validation_result
 
             # Step 6: Quarantine invalid records
-            if not invalid_df.empty:
+            if not invalid_df.empty:  # type: ignore[union-attr]
                 logger.warning(f"Found {len(invalid_df)} invalid records")
                 save_invalid_data_to_quarantine(minio_client, invalid_df, file_key)
 
             # Check if we have valid data to process
-            if valid_df.empty:
+            if valid_df.empty:  # type: ignore[union-attr]
                 logger.warning("No valid records to process")
                 raise ValueError(f"All records in {file_key} failed validation. Check quarantine.")
 

@@ -5,6 +5,7 @@ against expected structure and business rules.
 """
 
 from datetime import date
+from typing import Any
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
@@ -60,7 +61,7 @@ class SalesRecord(BaseModel):
 
     @field_validator("discount_percentage")
     @classmethod
-    def validate_discount_consistency(cls, discount: int, info) -> int:
+    def validate_discount_consistency(cls, discount: int, info: Any) -> int:
         """Validate that discount percentage is consistent with prices.
 
         Args:
@@ -80,7 +81,7 @@ class SalesRecord(BaseModel):
 
     @field_validator("delivery_date")
     @classmethod
-    def validate_delivery_after_order(cls, delivery: date, info) -> date:
+    def validate_delivery_after_order(cls, delivery: date, info: Any) -> date:
         """Validate that delivery date is not before order date.
 
         Args:
