@@ -152,7 +152,7 @@ class TestDataGenerator(unittest.TestCase):
     @patch("src.data_generator.os.makedirs")
     @patch("src.data_generator.random")
     @patch("src.data_generator.fake")
-    @patch("src.data_generator.minio.Minio")
+    @patch("src.data_generator.Minio")
     @patch("src.data_generator.logger")
     @patch("src.data_generator.time.sleep")
     def test_main_valid_frequency(
