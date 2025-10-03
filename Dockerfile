@@ -25,8 +25,8 @@ COPY --from=builder /root/.local /root/.local
 RUN groupadd --system --gid 1001 appgroup && \
     useradd --system --uid 1001 --gid appgroup --create-home appuser
 
-# Copy application code
-COPY --chown=appuser:appgroup src/ ./src/
+# Copy application code with read-only permissions for security
+COPY --chown=appuser:appgroup --chmod=555 src/ ./src/
 
 # Set PATH for user-installed packages
 ENV PATH=/root/.local/bin:$PATH

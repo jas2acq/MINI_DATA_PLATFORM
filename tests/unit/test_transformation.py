@@ -28,7 +28,6 @@ def test_transform_calculates_profit(sample_sales_data):
 
     assert "profit" in transformed_df.columns
 
-    # Profit = discounted_price - (original_price * 0.6)
     for idx, row in sample_sales_data.iterrows():
         expected_profit = row["discounted_price"] - (row["original_price"] * 0.6)
         actual_profit = transformed_df.loc[idx, "profit"]

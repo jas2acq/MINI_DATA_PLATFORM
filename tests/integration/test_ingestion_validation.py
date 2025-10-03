@@ -101,7 +101,7 @@ def test_ingest_and_validate_preserves_data_types(mock_minio_with_csv_data):
     df = get_raw_data(mock_minio_with_csv_data, "raw/test.csv")
 
     # Validate
-    valid_df, invalid_df = validate_data(df, SalesRecord)
+    valid_df, _ = validate_data(df, SalesRecord)
 
     # Check data types are preserved
     assert valid_df["order_id"].dtype == "object"  # String
