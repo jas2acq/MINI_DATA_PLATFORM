@@ -219,12 +219,11 @@ class TestDataGenerator(unittest.TestCase):
             *repeat(100.0, num_rows),  # original_price
             *repeat(4.5, num_rows),  # product_rating
         ]
-        mock_random.choice.side_effect = [
-            *repeat("Electronics", num_rows),  # category
-            *repeat("Laptop", num_rows),  # base
-            *repeat("Premium", num_rows),  # adjective
-            *repeat(True, num_rows),  # is_best_seller
-        ]
+        # Choice calls per row: category, is_best_seller, base, adjective
+        choice_values = []
+        for _ in range(num_rows):
+            choice_values.extend(["Electronics", True, "Laptop", "Premium"])
+        mock_random.choice.side_effect = choice_values
         mock_random.choices.side_effect = [
             ["A" * 10]
             for _ in range(num_rows)  # order_id
