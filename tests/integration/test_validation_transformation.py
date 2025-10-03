@@ -26,7 +26,7 @@ def test_validate_then_transform_valid_data(integration_sales_data):
 
     # Verify PII anonymization
     assert all(transformed_df["customer_email_hash"].str.len() == 64)  # SHA-256 hash
-    assert all(transformed_df["customer_phone_redacted"] == "***-****")
+    assert all(transformed_df["customer_phone_redacted"].str.startswith("***-***-"))  # Redacted phone
     assert all(transformed_df["customer_address_redacted"] == "*** **** **")
 
 

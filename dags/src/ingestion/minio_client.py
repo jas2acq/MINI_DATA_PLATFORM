@@ -185,20 +185,33 @@ def get_raw_data(
         response.close()
         response.release_conn()
 
+        # Determine which date columns to parse (only if they exist)
+        date_columns = ["order_date", "delivery_date", "data_collected_at"]
+
         # Convert to DataFrame or iterator
         if use_chunking:
             logger.info(f"Reading '{object_key}' in chunks of {chunk_size} rows")
-            return pd.read_csv(
-                io.BytesIO(data),
-                chunksize=chunk_size,
-                parse_dates=["order_date", "delivery_date", "data_collected_at"],
-            )
+            # Try to parse dates, but don't fail if columns are missing
+            try:
+                return pd.read_csv(
+                    io.BytesIO(data),
+                    chunksize=chunk_size,
+                    parse_dates=date_columns,
+                )
+            except ValueError:
+                # If date parsing fails due to missing columns, read without parsing
+                return pd.read_csv(io.BytesIO(data), chunksize=chunk_size)
         else:
             logger.info(f"Reading '{object_key}' as single DataFrame")
-            return pd.read_csv(
-                io.BytesIO(data),
-                parse_dates=["order_date", "delivery_date", "data_collected_at"],
-            )
+            # Try to parse dates, but don't fail if columns are missing
+            try:
+                return pd.read_csv(
+                    io.BytesIO(data),
+                    parse_dates=date_columns,
+                )
+            except ValueError:
+                # If date parsing fails due to missing columns, read without parsing
+                return pd.read_csv(io.BytesIO(data))
 
     except S3Error as e:
         logger.error(f"Failed to download object '{object_key}': {str(e)}")

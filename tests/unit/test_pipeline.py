@@ -1,6 +1,6 @@
 """Unit tests for ETL pipeline orchestrator."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import pandas as pd
 import pytest
@@ -34,8 +34,15 @@ def test_save_invalid_data_to_quarantine_empty_dataframe(mock_minio_client):
 def test_save_invalid_data_to_quarantine_s3_error(mock_minio_client, sample_invalid_data):
     """Test quarantine with S3 upload error."""
     sample_invalid_data["validation_error"] = "Invalid data"
+    mock_response = Mock()
+    mock_response.status = 500
     mock_minio_client.put_object.side_effect = S3Error(
-        "UploadError", "Upload failed", "resource", "request_id", "host_id"
+        response=mock_response,
+        code="UploadError",
+        message="Upload failed",
+        resource="quarantine/test.csv",
+        request_id="req123",
+        host_id="host456",
     )
 
     with pytest.raises(S3Error):
@@ -164,8 +171,15 @@ def test_run_pipeline_minio_error():
     with patch("dags.src.pipeline.get_vault_client") as mock_vault:
         with patch("dags.src.pipeline.get_minio_client") as mock_minio:
             mock_vault.return_value = MagicMock()
+            mock_response = Mock()
+            mock_response.status = 500
             mock_minio.side_effect = S3Error(
-                "ConnectionError", "MinIO failed", "resource", "request_id", "host_id"
+                response=mock_response,
+                code="ConnectionError",
+                message="MinIO failed",
+                resource="minio:9000",
+                request_id="req123",
+                host_id="host456",
             )
 
             with pytest.raises(S3Error):

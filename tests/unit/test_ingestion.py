@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 import pytest
 from minio.error import S3Error
+from unittest.mock import Mock
 
 from dags.src.ingestion.minio_client import (
     get_minio_client,
@@ -58,7 +59,7 @@ def test_get_minio_client_bucket_not_found(mock_vault_client):
         mock_minio.return_value = mock_client
 
         with patch.dict(os.environ, {"MINIO_SECURE": "False"}):
-            with pytest.raises(S3Error):
+            with pytest.raises(ValueError, match="Bucket 'data-platform' does not exist"):
                 get_minio_client(mock_vault_client)
 
 
@@ -76,8 +77,15 @@ def test_get_object_size_success(mock_minio_client):
 
 def test_get_object_size_not_found(mock_minio_client):
     """Test object size retrieval when object doesn't exist."""
+    mock_response = Mock()
+    mock_response.status = 404
     mock_minio_client.stat_object.side_effect = S3Error(
-        "NoSuchKey", "The specified key does not exist.", "resource", "request_id", "host_id"
+        response=mock_response,
+        code="NoSuchKey",
+        message="The specified key does not exist.",
+        resource="raw/nonexistent.csv",
+        request_id="req123",
+        host_id="host456",
     )
 
     with pytest.raises(S3Error):
@@ -170,8 +178,15 @@ def test_move_processed_file_invalid_source(mock_minio_client):
 
 def test_move_processed_file_copy_error(mock_minio_client):
     """Test file move with copy error."""
+    mock_response = Mock()
+    mock_response.status = 500
     mock_minio_client.copy_object.side_effect = S3Error(
-        "CopyError", "Copy failed", "resource", "request_id", "host_id"
+        response=mock_response,
+        code="CopyError",
+        message="Copy failed",
+        resource="raw/test.csv",
+        request_id="req123",
+        host_id="host456",
     )
 
     with pytest.raises(S3Error):

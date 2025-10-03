@@ -193,7 +193,7 @@ def test_e2e_pipeline_data_transformations_applied(e2e_complete_dataset, mock_e2
         with patch("dags.src.pipeline.get_minio_client") as mock_minio_client:
             with patch("dags.src.loading.postgres_loader.psycopg2.connect") as mock_pg_connect:
                 with patch(
-                    "dags.src.loading.postgres_loader.upsert_data",
+                    "dags.src.pipeline.upsert_data",
                     side_effect=capture_upsert_data,
                 ):
                     with patch("os.path.exists", return_value=True):
