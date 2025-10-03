@@ -153,12 +153,16 @@ class TestDataGenerator(unittest.TestCase):
     @patch("src.data_generator.random")
     @patch("src.data_generator.fake")
     @patch("src.data_generator.Minio")
+    @patch("src.data_generator.get_vault_client")
+    @patch("src.data_generator.get_minio_credentials_from_vault")
     @patch("src.data_generator.logger")
     @patch("src.data_generator.time.sleep")
     def test_main_valid_frequency(
         self,
         mock_sleep: MagicMock,
         mock_logger: MagicMock,
+        mock_get_minio_creds: MagicMock,
+        mock_get_vault: MagicMock,
         mock_minio: MagicMock,
         mock_fake: MagicMock,
         mock_random: MagicMock,
@@ -172,6 +176,8 @@ class TestDataGenerator(unittest.TestCase):
         Args:
             mock_sleep: Mock for time.sleep function.
             mock_logger: Mock for logger instance.
+            mock_get_minio_creds: Mock for get_minio_credentials_from_vault function.
+            mock_get_vault: Mock for get_vault_client function.
             mock_minio: Mock for Minio client.
             mock_fake: Mock for Faker instance.
             mock_random: Mock for random module.
@@ -182,12 +188,15 @@ class TestDataGenerator(unittest.TestCase):
 
         Verifies that main generates data and uploads to MinIO with expected structure.
         """
+        # Mock Vault client and credentials
+        mock_vault_client = MagicMock()
+        mock_get_vault.return_value = mock_vault_client
+        mock_get_minio_creds.return_value = ("testkey", "testsecret")
+
         # Mock environment variables
         mock_getenv.side_effect = [
             "10",  # FREQUENCY
             "localhost:9000",  # MINIO_ENDPOINT
-            "testkey",  # MINIO_ACCESS_KEY
-            "testsecret",  # MINIO_SECRET_KEY
             "False",  # MINIO_SECURE
         ]
 
