@@ -27,6 +27,91 @@ from dags.src.validation.validator import validate_data
 logger = setup_logger("pipeline", "logs/pipeline.log")
 
 
+def _process_chunked_data(
+    validation_result,
+    vault_client,
+    minio_client: Minio,
+    file_key: str,
+) -> None:
+    """Process data in chunked mode.
+
+    Args:
+        validation_result: Iterator of (valid_df, invalid_df) tuples.
+        vault_client: Vault client for credentials.
+        minio_client: MinIO client for quarantine operations.
+        file_key: Original file key.
+
+    Raises:
+        Exception: If processing fails.
+    """
+    logger.info("Processing in chunked mode")
+    valid_chunks = []
+    invalid_chunks = []
+
+    for valid_df, invalid_df in validation_result:
+        if not valid_df.empty:
+            valid_chunks.append(valid_df)
+        if not invalid_df.empty:
+            invalid_chunks.append(invalid_df)
+
+    # Quarantine all invalid records
+    if invalid_chunks:
+        combined_invalid = pd.concat(invalid_chunks, ignore_index=True)
+        logger.warning(f"Found {len(combined_invalid)} invalid records across all chunks")
+        save_invalid_data_to_quarantine(minio_client, combined_invalid, file_key)
+
+    # Transform valid chunks
+    logger.info("Transforming valid data chunks")
+    transformed_chunks = []
+    for valid_chunk in valid_chunks:
+        transformed_chunk = transform_sales_data(valid_chunk)
+        transformed_chunks.append(transformed_chunk)
+
+    # Load transformed data
+    logger.info("Loading transformed data to PostgreSQL")
+    for transformed_chunk in transformed_chunks:
+        upsert_data(vault_client, transformed_chunk)
+
+
+def _process_single_dataframe(
+    valid_df: pd.DataFrame,
+    invalid_df: pd.DataFrame,
+    vault_client,
+    minio_client: Minio,
+    file_key: str,
+) -> None:
+    """Process a single dataframe (non-chunked mode).
+
+    Args:
+        valid_df: DataFrame with valid records.
+        invalid_df: DataFrame with invalid records.
+        vault_client: Vault client for credentials.
+        minio_client: MinIO client for quarantine operations.
+        file_key: Original file key.
+
+    Raises:
+        ValueError: If no valid records to process.
+        Exception: If processing fails.
+    """
+    # Quarantine invalid records
+    if not invalid_df.empty:
+        logger.warning(f"Found {len(invalid_df)} invalid records")
+        save_invalid_data_to_quarantine(minio_client, invalid_df, file_key)
+
+    # Check if we have valid data to process
+    if valid_df.empty:
+        logger.warning("No valid records to process")
+        raise ValueError(f"All records in {file_key} failed validation. Check quarantine.")
+
+    # Transform valid data
+    logger.info(f"Transforming {len(valid_df)} valid records")
+    transformed_df = transform_sales_data(valid_df)
+
+    # Load into PostgreSQL
+    logger.info("Loading transformed data to PostgreSQL")
+    upsert_data(vault_client, transformed_df)
+
+
 def save_invalid_data_to_quarantine(
     minio_client: Minio,
     invalid_df: pd.DataFrame,
@@ -115,60 +200,12 @@ def run_pipeline(file_key: str) -> None:
         logger.info("Validating data against schema")
         validation_result = validate_data(raw_data, SalesRecord)
 
-        # Handle validation results based on whether data is chunked
+        # Step 6-8: Process validated data
         if isinstance(raw_data, type(iter([]))):
-            # Chunked data processing
-            logger.info("Processing in chunked mode")
-            valid_chunks = []
-            invalid_chunks = []
-
-            for valid_df, invalid_df in validation_result:
-                if not valid_df.empty:
-                    valid_chunks.append(valid_df)
-                if not invalid_df.empty:
-                    invalid_chunks.append(invalid_df)
-
-            # Quarantine all invalid records
-            if invalid_chunks:
-                import pandas as pd
-
-                combined_invalid = pd.concat(invalid_chunks, ignore_index=True)
-                logger.warning(f"Found {len(combined_invalid)} invalid records across all chunks")
-                save_invalid_data_to_quarantine(minio_client, combined_invalid, file_key)
-
-            # Transform valid chunks
-            logger.info("Transforming valid data chunks")
-            transformed_chunks = []
-            for valid_chunk in valid_chunks:
-                transformed_chunk = transform_sales_data(valid_chunk)
-                transformed_chunks.append(transformed_chunk)
-
-            # Load transformed data
-            logger.info("Loading transformed data to PostgreSQL")
-            for transformed_chunk in transformed_chunks:
-                upsert_data(vault_client, transformed_chunk)
-
+            _process_chunked_data(validation_result, vault_client, minio_client, file_key)
         else:
-            # Single DataFrame processing
             valid_df, invalid_df = validation_result
-
-            # Step 6: Quarantine invalid records
-            if not invalid_df.empty:  # type: ignore[union-attr]
-                logger.warning(f"Found {len(invalid_df)} invalid records")
-                save_invalid_data_to_quarantine(minio_client, invalid_df, file_key)
-
-            # Check if we have valid data to process
-            if valid_df.empty:  # type: ignore[union-attr]
-                logger.warning("No valid records to process")
-                raise ValueError(f"All records in {file_key} failed validation. Check quarantine.")
-
-            # Step 7: Transform valid data
-            logger.info(f"Transforming {len(valid_df)} valid records")
-            transformed_df = transform_sales_data(valid_df)
-
-            # Step 8: Load into PostgreSQL
-            logger.info("Loading transformed data to PostgreSQL")
-            upsert_data(vault_client, transformed_df)
+            _process_single_dataframe(valid_df, invalid_df, vault_client, minio_client, file_key)
 
         # Step 9: Move file to processed/
         logger.info("Moving file to processed prefix")

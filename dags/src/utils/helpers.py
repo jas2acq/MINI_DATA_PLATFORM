@@ -99,8 +99,10 @@ def get_vault_client(
         ConnectionError: If cannot connect to Vault server.
     """
     # Get Vault URL from environment if not provided
+    # Note: Default uses HTTP for local development only.
+    # For production, set VAULT_ADDR environment variable with HTTPS URL.
     if vault_url is None:
-        vault_url = os.getenv("VAULT_ADDR", "http://vault:8200")
+        vault_url = os.getenv("VAULT_ADDR", "http://vault:8200")  # nosem: python.lang.security.audit.non-https-connection.non-https-connection
 
     # Get Vault token from environment if not provided
     if vault_token is None:

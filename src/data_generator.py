@@ -1,8 +1,15 @@
+"""Sales data generator for testing and development purposes.
+
+Security Note: This module uses Python's random module and Faker for generating
+test data. These pseudorandom generators are NOT cryptographically secure and
+should ONLY be used for test data generation, not for security-sensitive operations
+like token generation or cryptographic keys.
+"""
 import datetime
 import io
 import logging
 import os
-import random
+import random  # nosem: python.lang.security.audit.non-crypto-random-module-used
 import string
 import time
 from collections.abc import Iterator
@@ -11,7 +18,7 @@ from typing import Any
 import hvac
 import pandas as pd
 from dotenv import load_dotenv
-from faker import Faker
+from faker import Faker  # nosem: python.lang.security.audit.non-crypto-random-module-used
 from minio.error import S3Error
 
 from minio import Minio

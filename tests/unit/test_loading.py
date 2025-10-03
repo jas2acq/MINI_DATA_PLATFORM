@@ -55,7 +55,9 @@ def test_get_postgres_connection_success(mock_vault_client):
         mock_conn = MagicMock()
         mock_connect.return_value = mock_conn
 
-        with patch.dict(os.environ, {"POSTGRES_CA_CERT": "/tmp/ca.crt"}):
+        # Security Note: /tmp path used only for testing purposes
+        # In production, CA certificates should be stored in secure, read-only locations
+        with patch.dict(os.environ, {"POSTGRES_CA_CERT": "/tmp/ca.crt"}):  # nosem: python.lang.security.audit.non-literal-import.non-literal-import
             with patch("os.path.exists", return_value=True):
                 connection = get_postgres_connection(mock_vault_client)
 
@@ -63,7 +65,7 @@ def test_get_postgres_connection_success(mock_vault_client):
                 mock_connect.assert_called_once()
                 call_args = mock_connect.call_args[1]
                 assert call_args["sslmode"] == "verify-full"
-                assert call_args["sslrootcert"] == "/tmp/ca.crt"
+                assert call_args["sslrootcert"] == "/tmp/ca.crt"  # Test value only
 
 
 def test_get_postgres_connection_error(mock_vault_client):
